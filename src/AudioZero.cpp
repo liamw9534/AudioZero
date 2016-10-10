@@ -53,7 +53,6 @@ void AudioZeroClass::end() {
 }*/
 
 void AudioZeroClass::play(File myFile) {
-    Serial.println("Playing");
     int to_read = __NumberOfSamples;
     int available = 0;
     while (available = myFile.available()) {
@@ -120,7 +119,7 @@ void AudioZeroClass::play(File myFile) {
  * channel mode configured for event triggered conversions.
  */
 void AudioZeroClass::dacConfigure(void) {
-    analogWriteResolution(8);
+    analogWriteResolution(10);
     analogWrite(A0, 0);
 }
 
