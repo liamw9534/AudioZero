@@ -13,101 +13,149 @@
  */
 
 #include "AudioZero.h"
-#include <SD.h>
-#include <SPI.h>
+#include "wav.h"
 
+#include <SdFat.h>
+// #include <SD.h>
+// #include <SPI.h>
 
-/*Global variables*/
-bool __StartFlag; // Is started?
+#define NEUTRAL_SOUND 512 // = (2^10 / 2)
+#define NUMBER_OF_SAMPLES 1024 // Number of samples to read in block
+
+/* Global variables */
+volatile bool __StartFlag; // Is started?
 volatile uint32_t __SampleIndex; // current played sample
 uint32_t __HeadIndex; // current start of buffer
-uint32_t __NumberOfSamples; // Number of samples to read in block
-uint32_t __StopAtIndex; // Sample where to stop writing buffer into DAC
-uint8_t *__WavSamples; // buffer
+volatile uint32_t __StopAtIndex; // Sample where to stop writing buffer into DAC
 
-int __Volume;
+int16_t *__WavSamples; // buffer
+riff_header *__RIFFHeader; // RIFF header
+wav_header *__WavHeader; // Wav header
+data_header *__DataHeader; // Wav header
+uint32_t __SamplesPending;
 
-void AudioZeroClass::begin(uint32_t sampleRate) {
+File __toPlay;
+bool __Configured = false;
+
+void AudioZeroClass::begin() {
     __StartFlag = false;
-    __SampleIndex = 0;					//in order to start from the beginning
-    __NumberOfSamples = 1024;	//samples to read to have a buffer
+    __SampleIndex = 0;			//in order to start from the beginning
     __StopAtIndex = -1;
+    __SamplesPending = 0;
 
     /*Allocate the buffer where the samples are stored*/
-    __WavSamples = (uint8_t *) malloc(__NumberOfSamples * sizeof(uint8_t));
+    __WavSamples = (int16_t *) malloc(NUMBER_OF_SAMPLES * sizeof(int16_t));
+    __RIFFHeader = (riff_header *) malloc(RIFF_HEADER_SIZE);
+    __WavHeader = (wav_header *) malloc(WAV_HEADER_SIZE);
+    __DataHeader = (data_header *) malloc(DATA_HEADER_SIZE);
 
     /*Modules configuration */
     dacConfigure();
-    tcConfigure(sampleRate);
+
+
 }
 
 void AudioZeroClass::end() {
-    tcDisable();
-    tcReset();
+    if (__Configured) {
+        tcDisable();
+        tcReset();
+    }
     analogWrite(A0, 0);
     free(__WavSamples);
+    free(__RIFFHeader);
+    free(__WavHeader);
+    free(__DataHeader);
 }
 
-/*void AudioZeroClass::prepare(int volume){
-//Not Implemented yet
-}*/
 
-void AudioZeroClass::play(File myFile) {
-    int to_read = __NumberOfSamples;
+int AudioZeroClass::prepare(File toPlay){
+    __StartFlag = false; // to stop writing from the buffer
+    __SampleIndex = 0;	//in order to start from the beginning
+    __StopAtIndex = -1;
+    __SamplesPending = 0;
+    __toPlay = toPlay;
+
+
+    // Read header + first buffer
+    int to_read = 0;
+    int available = __toPlay.available();
+
+    if (available > 0) {
+        // READ RIFF Header
+        __toPlay.read(__RIFFHeader, RIFF_HEADER_SIZE);
+
+        // Read WAV Header
+        __toPlay.read(__WavHeader, WAV_HEADER_SIZE);
+
+        tcConfigure(__WavHeader->sample_rate);
+        __toPlay.seek(RIFF_HEADER_SIZE + __WavHeader->data_header_length + 8);
+
+        __toPlay.read(__DataHeader, DATA_HEADER_SIZE);
+        __SamplesPending = __DataHeader->data_length / 2;
+
+        to_read = NUMBER_OF_SAMPLES;
+        __toPlay.read(__WavSamples, to_read  * sizeof(int16_t));
+        __HeadIndex = 0;
+        __SamplesPending -= to_read;
+        tcStartCounter(); //start the interruptions, it will do nothing until __StartFlag is true
+        return 0;
+    } else {
+        return -1; // File is empty
+    }
+}
+
+void AudioZeroClass::play() {
+    int to_read = 0;
     int available = 0;
-    while (available = myFile.available()) {
-        if (!__StartFlag) {
-            // Check if we can read the desired amount
-            to_read = __NumberOfSamples;
-            if (to_read > available) {
-                // If we have less bytes to read, read the missing and stop
-                to_read = available;
-                __StopAtIndex = to_read;
-            }
-            /* read an entire buffer from the file*/
-            myFile.read(__WavSamples, to_read);
-            __HeadIndex = 0;
+    __StartFlag = true;
+    while ((available = __toPlay.available()) && __SamplesPending > 0) {
+        uint32_t current__SampleIndex = __SampleIndex;
 
-            /* once the buffer is filled for the first time
-            the counter can be started */
-            tcStartCounter();
-            __StartFlag = true;
-        } else {
-            uint32_t current__SampleIndex = __SampleIndex;
-
-            if (current__SampleIndex > __HeadIndex) {
-                to_read = current__SampleIndex - __HeadIndex;
+        if (current__SampleIndex > __HeadIndex) {
+            to_read = min(current__SampleIndex - __HeadIndex, __SamplesPending);
+            if (to_read > 0) { // First time this will be 0
                 if (to_read > available) {
                     // If we have less bytes to read, read the missing and stop
                     to_read = available;
-                    __StopAtIndex = to_read + __HeadIndex;
                 }
-                myFile.read(&__WavSamples[__HeadIndex], to_read);
+                __toPlay.read(&__WavSamples[__HeadIndex], to_read * sizeof(int16_t));
+                __SamplesPending -= to_read;
+                __StopAtIndex = to_read + __HeadIndex-1;
                 __HeadIndex = current__SampleIndex;
-            } else if (current__SampleIndex < __HeadIndex) {
-                to_read = __NumberOfSamples-1 - __HeadIndex;
+            }
+        } else if (current__SampleIndex < __HeadIndex) {
+            to_read = min(NUMBER_OF_SAMPLES-1 - __HeadIndex, __SamplesPending);
+            if (to_read > 0) {
                 if (to_read > available) {
                     // If we have less bytes to read, read the missing and stop
                     to_read = available;
-                    __StopAtIndex = to_read + __HeadIndex;
+                    __StopAtIndex = to_read + __HeadIndex - 1;
                 } else {
                     // If not, we have less bytes available
                     available -= to_read;
                 }
-                myFile.read(&__WavSamples[__HeadIndex], to_read);
-
-                to_read = current__SampleIndex;
-                if (to_read > available) {
-                    // If we have less bytes to read, read the missing and stop
-                    to_read = available;
-                    __StopAtIndex = to_read;
+                __toPlay.read(&__WavSamples[__HeadIndex], to_read  * sizeof(int16_t));
+                __SamplesPending -= to_read;
+                if (available > 0) {
+                    to_read = min(current__SampleIndex, __SamplesPending);
+                    if (to_read > 0) {
+                        if (to_read > available) {
+                            // If we have less bytes to read, read the missing and stop
+                            to_read = available;
+                        }
+                        __toPlay.read(__WavSamples, to_read  * sizeof(int16_t));
+                        __SamplesPending -= to_read;
+                        __StopAtIndex = to_read - 1;
+                    }
                 }
-                myFile.read(__WavSamples, to_read);
-
-
                 __HeadIndex = current__SampleIndex;
             }
         }
+    }
+    // Serial.println(__SampleIndex);
+    // Serial.println(__StopAtIndex);
+    while (__SampleIndex != __StopAtIndex) {
+        delay(1);
     }
 }
 
@@ -120,7 +168,7 @@ void AudioZeroClass::play(File myFile) {
  */
 void AudioZeroClass::dacConfigure(void) {
     analogWriteResolution(10);
-    analogWrite(A0, 0);
+    analogWrite(A0, NEUTRAL_SOUND);
 }
 
 /**
@@ -130,6 +178,7 @@ void AudioZeroClass::dacConfigure(void) {
  * each time the audio sample frequency period expires.
  */
  void AudioZeroClass::tcConfigure(uint32_t sampleRate) {
+     __Configured = true;
     // Enable GCLK for TCC2 and TC5 (timer counter input clock)
     GCLK->CLKCTRL.reg = (uint16_t) (GCLK_CLKCTRL_CLKEN | GCLK_CLKCTRL_GEN_GCLK0 | GCLK_CLKCTRL_ID(GCM_TC4_TC5)) ;
     while (GCLK->STATUS.bit.SYNCBUSY);
@@ -190,15 +239,15 @@ extern "C" {
 
 void Audio_Handler (void) {
     // Write next sample
-    if (__SampleIndex != __StopAtIndex) {
-        analogWrite(A0, __WavSamples[__SampleIndex++]);
+    if ((__SampleIndex != __StopAtIndex) && __StartFlag != false) {
+        analogWrite(A0, (__WavSamples[__SampleIndex++] >> 6) + 512);
     } else {
-        analogWrite(A0, 0);
+        analogWrite(A0, NEUTRAL_SOUND);
     }
     // Clear interrupt
     TC5->COUNT16.INTFLAG.bit.MC0 = 1;
     // If it was the last sample in the buffer, start again
-    if (__SampleIndex == __NumberOfSamples) {
+    if (__SampleIndex == NUMBER_OF_SAMPLES - 1) {
         __SampleIndex = 0;
     }
 }
