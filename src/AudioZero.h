@@ -29,6 +29,9 @@ public:
 	void play() ;
 	void end();
 
+	/* Call a function every n_samples */
+	void set_callback(void (*func)(void), uint32_t n_samples);
+
 private:
 	void dacConfigure(void);
 	void tcConfigure(uint32_t sampleRate);

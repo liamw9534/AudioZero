@@ -28,6 +28,10 @@ volatile uint32_t __SampleIndex; // current played sample
 uint32_t __HeadIndex; // current start of buffer
 volatile uint32_t __StopAtIndex; // Sample where to stop writing buffer into DAC
 
+uint32_t __samples_callback;
+uint32_t __samples_next_callback;
+void (*__callback)(void);
+
 int16_t *__WavSamples; // buffer
 riff_header *__RIFFHeader; // RIFF header
 wav_header *__WavHeader; // Wav header
@@ -48,6 +52,11 @@ void AudioZeroClass::begin() {
     __RIFFHeader = (riff_header *) malloc(RIFF_HEADER_SIZE);
     __WavHeader = (wav_header *) malloc(WAV_HEADER_SIZE);
     __DataHeader = (data_header *) malloc(DATA_HEADER_SIZE);
+
+    /*Set callback to none */
+    __samples_callback = 0;
+    __samples_next_callback = 0;
+    __callback = NULL;
 
     /*Modules configuration */
     dacConfigure();
@@ -231,6 +240,12 @@ void AudioZeroClass::tcDisable() {
     while (tcIsSyncing());
 }
 
+void AudioZeroClass::set_callback(void (*func)(void), uint32_t n_samples) {
+    __callback = func;
+    __samples_callback = n_samples;
+    __samples_next_callback = 0;
+}
+
 AudioZeroClass AudioZero;
 
 #ifdef __cplusplus
@@ -243,6 +258,15 @@ void Audio_Handler (void) {
         analogWrite(A0, (__WavSamples[__SampleIndex++] >> 6) + 512);
     } else {
         analogWrite(A0, NEUTRAL_SOUND);
+    }
+
+    if (__samples_callback != 0 && __StartFlag != false &&
+            (__SampleIndex != __StopAtIndex)) {
+        if (__samples_next_callback == 0 ) {
+            __callback();
+            __samples_next_callback = __samples_callback;
+        }
+        __samples_next_callback--;
     }
     // Clear interrupt
     TC5->COUNT16.INTFLAG.bit.MC0 = 1;

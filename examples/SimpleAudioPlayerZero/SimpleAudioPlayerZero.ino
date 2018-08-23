@@ -9,7 +9,7 @@
  * An audio amplifier to connect to the DAC0 and ground
  * A speaker to connect to the audio amplifier
 
- 
+
  Arturo Guadalupi <a.guadalupi@arduino.cc>
  Angelo Scialabba <a.scialabba@arduino.cc>
  Claudio Indellicati <c.indellicati@arduino.cc>
@@ -37,8 +37,7 @@ void setup()
   }
   Serial.println(" done.");
 
-  // 44100kHz stereo => 88200 sample rate
-  AudioZero.begin(2*44100);
+  AudioZero.begin();
 }
 
 void loop()
@@ -52,12 +51,13 @@ void loop()
     Serial.println("error opening test.wav");
     while (true);
   }
+  Serial.print("Preparing");
+  AudioZero.prepare(myFile);
 
   Serial.print("Playing");
-  
-  // until the file is not finished  
   AudioZero.play(myFile);
 
   Serial.println("End of file. Thank you for listening!");
+  AudioZero.end();
   while (true) ;
 }
