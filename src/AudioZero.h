@@ -28,6 +28,7 @@ public:
 	int prepare(File myFile);
 	void play() ;
 	void end();
+	unsigned int getNumSamples();
 
 	/* Call a function every n_samples */
 	void set_callback(void (*func)(void), uint32_t n_samples);

@@ -28,8 +28,8 @@ volatile uint32_t __SampleIndex; // current played sample
 uint32_t __HeadIndex; // current start of buffer
 volatile uint32_t __StopAtIndex; // Sample where to stop writing buffer into DAC
 
-uint32_t __samples_callback;
-uint32_t __samples_next_callback;
+volatile uint32_t __samples_callback;
+volatile uint32_t __samples_next_callback;
 void (*__callback)(void);
 
 int16_t *__WavSamples; // buffer
@@ -37,6 +37,7 @@ riff_header *__RIFFHeader; // RIFF header
 wav_header *__WavHeader; // Wav header
 data_header *__DataHeader; // Wav header
 uint32_t __SamplesPending;
+unsigned int __TotalSamples;
 
 File __toPlay;
 bool __Configured = false;
@@ -46,6 +47,7 @@ void AudioZeroClass::begin() {
     __SampleIndex = 0;			//in order to start from the beginning
     __StopAtIndex = -1;
     __SamplesPending = 0;
+    __TotalSamples = 0;
 
     /*Allocate the buffer where the samples are stored*/
     __WavSamples = (int16_t *) malloc(NUMBER_OF_SAMPLES * sizeof(int16_t));
@@ -77,6 +79,10 @@ void AudioZeroClass::end() {
 }
 
 
+unsigned int AudioZeroClass::getNumSamples() {
+    return __TotalSamples;
+}
+
 int AudioZeroClass::prepare(File toPlay){
     __StartFlag = false; // to stop writing from the buffer
     __SampleIndex = 0;	//in order to start from the beginning
@@ -101,6 +107,7 @@ int AudioZeroClass::prepare(File toPlay){
 
         __toPlay.read(__DataHeader, DATA_HEADER_SIZE);
         __SamplesPending = __DataHeader->data_length / 2;
+        __TotalSamples = __SamplesPending;
 
         to_read = NUMBER_OF_SAMPLES;
         __toPlay.read(__WavSamples, to_read  * sizeof(int16_t));
@@ -242,8 +249,8 @@ void AudioZeroClass::tcDisable() {
 
 void AudioZeroClass::set_callback(void (*func)(void), uint32_t n_samples) {
     __callback = func;
+    __samples_next_callback = n_samples;
     __samples_callback = n_samples;
-    __samples_next_callback = 0;
 }
 
 AudioZeroClass AudioZero;
@@ -256,18 +263,17 @@ void Audio_Handler (void) {
     // Write next sample
     if ((__SampleIndex != __StopAtIndex) && __StartFlag != false) {
         analogWrite(A0, (__WavSamples[__SampleIndex++] >> 6) + 512);
+        if (__samples_callback != 0) {
+            __samples_next_callback--;
+            if (__samples_next_callback == 0 ) {
+                __callback();
+                __samples_next_callback = __samples_callback;
+            }
+        }
     } else {
         analogWrite(A0, NEUTRAL_SOUND);
     }
 
-    if (__samples_callback != 0 && __StartFlag != false &&
-            (__SampleIndex != __StopAtIndex)) {
-        if (__samples_next_callback == 0 ) {
-            __callback();
-            __samples_next_callback = __samples_callback;
-        }
-        __samples_next_callback--;
-    }
     // Clear interrupt
     TC5->COUNT16.INTFLAG.bit.MC0 = 1;
     // If it was the last sample in the buffer, start again
