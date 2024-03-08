@@ -83,6 +83,10 @@ unsigned int AudioZeroClass::getNumSamples() {
     return __TotalSamples;
 }
 
+unsigned int AudioZeroClass::getSampleRate() {
+    return __WavHeader->sample_rate;
+}
+
 int AudioZeroClass::prepare(File toPlay){
     __StartFlag = false; // to stop writing from the buffer
     __SampleIndex = 0;	//in order to start from the beginning

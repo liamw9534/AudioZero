@@ -29,6 +29,7 @@ public:
 	void play() ;
 	void end();
 	unsigned int getNumSamples();
+    unsigned int getSampleRate();
 
 	/* Call a function every n_samples */
 	void set_callback(void (*func)(void), uint32_t n_samples);
