@@ -26,6 +26,19 @@
 
 SdFat SD;
 
+class AudioFileSource : public AudioZeroSource {
+public:
+    AudioFileSource(File& f) : mFile(f) {}
+    int read(void* buf, size_t count) override {
+        return mFile.read(buf, count);
+    }
+    int available() { return mFile.available(); }
+    int seek(size_t pos) { return mFile.seek(pos); }
+
+private:
+    File& mFile;
+};
+
 void setup()
 {
   // debug output at 115200 baud
@@ -54,7 +67,9 @@ void loop()
     while (true);
   }
   Serial.print("Preparing");
-  AudioZero.prepare(myFile);
+
+  AudioFileSource source(myFile);
+  AudioZero.prepare(source);
 
   Serial.print("Playing");
   AudioZero.play();

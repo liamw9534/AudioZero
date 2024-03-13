@@ -15,10 +15,6 @@
 #include "AudioZero.h"
 #include "wav.h"
 
-#include <SdFat.h>
-// #include <SD.h>
-// #include <SPI.h>
-
 #define NEUTRAL_SOUND 512 // = (2^10 / 2)
 #define NUMBER_OF_SAMPLES 1024 // Number of samples to read in block
 
@@ -39,7 +35,7 @@ data_header *__DataHeader; // Wav header
 uint32_t __SamplesPending;
 unsigned int __TotalSamples;
 
-File __toPlay;
+AudioZeroSource *__toPlay;
 bool __Configured = false;
 
 void AudioZeroClass::begin() {
@@ -87,34 +83,33 @@ unsigned int AudioZeroClass::getSampleRate() {
     return __WavHeader->sample_rate;
 }
 
-int AudioZeroClass::prepare(File toPlay){
+int AudioZeroClass::prepare(AudioZeroSource& toPlay){
     __StartFlag = false; // to stop writing from the buffer
     __SampleIndex = 0;	//in order to start from the beginning
     __StopAtIndex = -1;
     __SamplesPending = 0;
-    __toPlay = toPlay;
-
+    __toPlay = &toPlay;
 
     // Read header + first buffer
     int to_read = 0;
-    int available = __toPlay.available();
+    int available = __toPlay->available();
 
     if (available > 0) {
         // READ RIFF Header
-        __toPlay.read(__RIFFHeader, RIFF_HEADER_SIZE);
+        __toPlay->read(__RIFFHeader, RIFF_HEADER_SIZE);
 
         // Read WAV Header
-        __toPlay.read(__WavHeader, WAV_HEADER_SIZE);
+        __toPlay->read(__WavHeader, WAV_HEADER_SIZE);
 
         tcConfigure(__WavHeader->sample_rate);
-        __toPlay.seek(RIFF_HEADER_SIZE + __WavHeader->data_header_length + 8);
+        __toPlay->seek(RIFF_HEADER_SIZE + __WavHeader->data_header_length + 8);
 
-        __toPlay.read(__DataHeader, DATA_HEADER_SIZE);
+        __toPlay->read(__DataHeader, DATA_HEADER_SIZE);
         __SamplesPending = __DataHeader->data_length / 2;
         __TotalSamples = __SamplesPending;
 
         to_read = NUMBER_OF_SAMPLES;
-        __toPlay.read(__WavSamples, to_read  * sizeof(int16_t));
+        __toPlay->read(__WavSamples, to_read  * sizeof(int16_t));
         __HeadIndex = 0;
         __SamplesPending -= to_read;
         tcStartCounter(); //start the interruptions, it will do nothing until __StartFlag is true
@@ -128,7 +123,7 @@ void AudioZeroClass::play() {
     int to_read = 0;
     int available = 0;
     __StartFlag = true;
-    while ((available = __toPlay.available()) && __SamplesPending > 0) {
+    while ((available = __toPlay->available()) && __SamplesPending > 0) {
         uint32_t current__SampleIndex = __SampleIndex;
 
         if (current__SampleIndex > __HeadIndex) {
@@ -138,7 +133,7 @@ void AudioZeroClass::play() {
                     // If we have less bytes to read, read the missing and stop
                     to_read = available;
                 }
-                __toPlay.read(&__WavSamples[__HeadIndex], to_read * sizeof(int16_t));
+                __toPlay->read(&__WavSamples[__HeadIndex], to_read * sizeof(int16_t));
                 __SamplesPending -= to_read;
                 __StopAtIndex = to_read + __HeadIndex-1;
                 __HeadIndex = current__SampleIndex;
@@ -154,7 +149,7 @@ void AudioZeroClass::play() {
                     // If not, we have less bytes available
                     available -= to_read;
                 }
-                __toPlay.read(&__WavSamples[__HeadIndex], to_read  * sizeof(int16_t));
+                __toPlay->read(&__WavSamples[__HeadIndex], to_read  * sizeof(int16_t));
                 __SamplesPending -= to_read;
                 if (available > 0) {
                     to_read = min(current__SampleIndex, __SamplesPending);
@@ -163,7 +158,7 @@ void AudioZeroClass::play() {
                             // If we have less bytes to read, read the missing and stop
                             to_read = available;
                         }
-                        __toPlay.read(__WavSamples, to_read  * sizeof(int16_t));
+                        __toPlay->read(__WavSamples, to_read  * sizeof(int16_t));
                         __SamplesPending -= to_read;
                         __StopAtIndex = to_read - 1;
                     }

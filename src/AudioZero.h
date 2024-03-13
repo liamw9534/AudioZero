@@ -16,16 +16,22 @@
 #define AUDIOZERO_H
 
 #include <Arduino.h>
-#include <SdFat.h>
 
 // #include "Print.h"
+
+class AudioZeroSource {
+public:
+    virtual int seek(size_t offset) = 0;
+    virtual int read(void *buf, size_t count) = 0;
+    virtual int available() = 0;
+};
 
 class AudioZeroClass{
 public:
 
 	AudioZeroClass() {};
 	void begin();
-	int prepare(File myFile);
+	int prepare(AudioZeroSource &);
 	void play() ;
 	void end();
 	unsigned int getNumSamples();
