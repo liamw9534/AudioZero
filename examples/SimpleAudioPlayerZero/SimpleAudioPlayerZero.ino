@@ -32,8 +32,9 @@ public:
     int read(void* buf, size_t count) override {
         return mFile.read(buf, count);
     }
-    int available() { return mFile.available(); }
-    int seek(size_t pos) { return mFile.seek(pos); }
+    int available() override { return mFile.available(); }
+    int seek(size_t pos) override { return mFile.seek(pos); }
+    bool abort() override { return false; }
 
 private:
     File& mFile;

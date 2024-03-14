@@ -24,6 +24,7 @@ public:
     virtual int seek(size_t offset) = 0;
     virtual int read(void *buf, size_t count) = 0;
     virtual int available() = 0;
+    virtual bool abort() = 0;
 };
 
 class AudioZeroClass{

@@ -123,7 +123,7 @@ void AudioZeroClass::play() {
     int to_read = 0;
     int available = 0;
     __StartFlag = true;
-    while ((available = __toPlay->available()) && __SamplesPending > 0) {
+    while (!__toPlay->abort() && (available = __toPlay->available()) && __SamplesPending > 0) {
         uint32_t current__SampleIndex = __SampleIndex;
 
         if (current__SampleIndex > __HeadIndex) {
@@ -169,8 +169,13 @@ void AudioZeroClass::play() {
     }
     // Serial.println(__SampleIndex);
     // Serial.println(__StopAtIndex);
-    while (__SampleIndex != __StopAtIndex) {
-        delay(1);
+
+    if (__toPlay->abort()) {
+        tcDisable();
+    } else {
+        while (__SampleIndex != __StopAtIndex) {
+            delay(1);
+        }
     }
 }
 
